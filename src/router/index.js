@@ -28,6 +28,14 @@ const routes = [
         path: "ajustes",
         component: () => import("../views/Ajustes.vue"),
       },
+      {
+        path: "incidencias",
+        component: () => import("../views/Incidencias.vue"),
+      },
+      {
+        path: "tratamientos",
+        component: () => import("../views/Tratamientos.vue"),
+      },
     ],
   },
   {
