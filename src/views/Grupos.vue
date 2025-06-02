@@ -540,7 +540,6 @@ const cerrarModal = () => {
   };
 };
 
-// Función corregida para subir fotos - reemplazar la función subirFoto en Grupos.vue
 const subirFoto = async () => {
   const input = document.createElement("input");
   input.type = "file";
@@ -550,9 +549,9 @@ const subirFoto = async () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validar tamaño (máximo 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      alert("❌ La imagen es demasiado grande (máximo 10MB)");
+    // Validar tamaño (máximo 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("❌ La imagen es demasiado grande (máximo 5MB)");
       return;
     }
 
@@ -568,10 +567,15 @@ const subirFoto = async () => {
     try {
       console.log(`📷 Subiendo imagen para animal ${animalDetalle.value.chapeta}`);
       
+      // Buscar el botón de upload y guardar texto original
+      const uploadButton = document.querySelector('.btn-upload');
+      const originalText = uploadButton ? uploadButton.textContent : "📷 Cambiar Foto";
+      
       // Mostrar loading
-      const originalText = document.querySelector('.btn-upload').textContent;
-      document.querySelector('.btn-upload').textContent = "📤 Subiendo...";
-      document.querySelector('.btn-upload').disabled = true;
+      if (uploadButton) {
+        uploadButton.textContent = "📤 Subiendo...";
+        uploadButton.disabled = true;
+      }
 
       const response = await api.post(
         `/animales/${animalDetalle.value.id}/subir_imagen/`,
@@ -617,8 +621,11 @@ const subirFoto = async () => {
       alert(`❌ ${errorMessage}`);
     } finally {
       // Restaurar botón
-      document.querySelector('.btn-upload').textContent = originalText;
-      document.querySelector('.btn-upload').disabled = false;
+      const uploadButton = document.querySelector('.btn-upload');
+      if (uploadButton) {
+        uploadButton.textContent = "📷 Cambiar Foto";
+        uploadButton.disabled = false;
+      }
     }
   };
 
