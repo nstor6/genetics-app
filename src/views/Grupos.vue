@@ -7,8 +7,19 @@
       </button>
     </div>
 
+    <!-- Estado de carga -->
+    <div v-if="cargando" class="loading-section">
+      <p>🔄 Cargando animales...</p>
+    </div>
+
+    <!-- Errores -->
+    <div v-if="error" class="error-section">
+      <p>❌ {{ error }}</p>
+      <button @click="cargarAnimales" class="btn-retry">🔄 Reintentar</button>
+    </div>
+
     <!-- Filtros y búsqueda -->
-    <div class="filtros-section">
+    <div class="filtros-section" v-if="!cargando && !error">
       <div class="filtros-row">
         <input
           v-model="busqueda"
@@ -33,7 +44,7 @@
     </div>
 
     <!-- Lista de animales -->
-    <div class="animales-grid" v-if="animalesFiltrados.length > 0">
+    <div class="animales-grid" v-if="animalesFiltrados.length > 0 && !cargando">
       <div
         v-for="animal in animalesFiltrados"
         :key="animal.id"
@@ -90,8 +101,11 @@
       </div>
     </div>
 
-    <div v-else class="no-animales">
+    <div v-else-if="!cargando && !error" class="no-animales">
       <p>No se encontraron animales con los filtros aplicados</p>
+      <button @click="mostrarModalAnimal = true" class="btn-add">
+        + Agregar primer animal
+      </button>
     </div>
 
     <!-- Modal para crear/editar animal -->
@@ -309,6 +323,8 @@ const mostrarModalAnimal = ref(false);
 const animalEditando = ref(null);
 const animalDetalle = ref(null);
 const guardando = ref(false);
+const cargando = ref(false);
+const error = ref("");
 
 // Formulario de animal
 const formAnimal = ref({
@@ -324,58 +340,95 @@ const formAnimal = ref({
   notas: "",
 });
 
+// Función auxiliar para asegurar que tenemos un array
+const toArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && data.results && Array.isArray(data.results)) return data.results;
+  console.warn("⚠️ Datos recibidos no son array:", data);
+  return [];
+};
+
 // Computed
 const animalesFiltrados = computed(() => {
-  let resultado = animales.value;
+  try {
+    // Asegurar que animales.value es un array
+    const animalesArray = toArray(animales.value);
+    let resultado = animalesArray;
 
-  // Filtro por búsqueda
-  if (busqueda.value) {
-    const termino = busqueda.value.toLowerCase();
-    resultado = resultado.filter(
-      (animal) =>
-        animal.chapeta.toLowerCase().includes(termino) ||
-        (animal.nombre && animal.nombre.toLowerCase().includes(termino)),
-    );
+    // Filtro por búsqueda
+    if (busqueda.value) {
+      const termino = busqueda.value.toLowerCase();
+      resultado = resultado.filter(
+        (animal) =>
+          (animal.chapeta && animal.chapeta.toLowerCase().includes(termino)) ||
+          (animal.nombre && animal.nombre.toLowerCase().includes(termino))
+      );
+    }
+
+    // Filtro por estado productivo
+    if (filtroEstado.value) {
+      resultado = resultado.filter(
+        (animal) => animal.estado_productivo === filtroEstado.value
+      );
+    }
+
+    // Filtro por sexo
+    if (filtroSexo.value) {
+      resultado = resultado.filter((animal) => animal.sexo === filtroSexo.value);
+    }
+
+    return resultado;
+  } catch (err) {
+    console.error("❌ Error en animalesFiltrados:", err);
+    return [];
   }
-
-  // Filtro por estado productivo
-  if (filtroEstado.value) {
-    resultado = resultado.filter(
-      (animal) => animal.estado_productivo === filtroEstado.value,
-    );
-  }
-
-  // Filtro por sexo
-  if (filtroSexo.value) {
-    resultado = resultado.filter((animal) => animal.sexo === filtroSexo.value);
-  }
-
-  return resultado;
 });
 
 // Métodos
 const cargarAnimales = async () => {
+  cargando.value = true;
+  error.value = "";
+  
   try {
+    console.log("🔄 Cargando animales...");
     const response = await api.get("/animales/");
-    animales.value = response.data;
-  } catch (error) {
-    console.error("Error cargando animales:", error);
-    alert("Error al cargar los animales");
+    
+    console.log("📊 Respuesta animales:", response.data);
+    
+    // Convertir a array y asignar
+    const animalesArray = toArray(response.data);
+    animales.value = animalesArray;
+    
+    console.log(`✅ ${animalesArray.length} animales cargados`);
+    
+  } catch (err) {
+    console.error("❌ Error cargando animales:", err);
+    error.value = `Error cargando animales: ${err.response?.data?.detail || err.message}`;
+    animales.value = []; // Asegurar que siempre sea array
+  } finally {
+    cargando.value = false;
   }
 };
 
 const calcularEdad = (fechaNacimiento) => {
-  const hoy = new Date();
-  const nacimiento = new Date(fechaNacimiento);
-  const años = hoy.getFullYear() - nacimiento.getFullYear();
-  const meses = hoy.getMonth() - nacimiento.getMonth();
+  try {
+    if (!fechaNacimiento) return "No especificada";
+    
+    const hoy = new Date();
+    const nacimiento = new Date(fechaNacimiento);
+    const años = hoy.getFullYear() - nacimiento.getFullYear();
+    const meses = hoy.getMonth() - nacimiento.getMonth();
 
-  if (años === 0) {
-    return `${Math.abs(meses)} meses`;
-  } else if (meses < 0) {
-    return `${años - 1} años, ${12 + meses} meses`;
-  } else {
-    return `${años} años, ${meses} meses`;
+    if (años === 0) {
+      return `${Math.abs(meses)} meses`;
+    } else if (meses < 0) {
+      return `${años - 1} años, ${12 + meses} meses`;
+    } else {
+      return `${años} años, ${meses} meses`;
+    }
+  } catch (err) {
+    console.error("Error calculando edad:", err);
+    return "Error calculando edad";
   }
 };
 
@@ -385,7 +438,18 @@ const seleccionarAnimal = (animal) => {
 
 const editarAnimal = (animal) => {
   animalEditando.value = animal;
-  formAnimal.value = { ...animal };
+  formAnimal.value = { 
+    chapeta: animal.chapeta || "",
+    nombre: animal.nombre || "",
+    sexo: animal.sexo || "",
+    fecha_nacimiento: animal.fecha_nacimiento || "",
+    raza: animal.raza || "",
+    estado_reproductivo: animal.estado_reproductivo || "",
+    estado_productivo: animal.estado_productivo || "",
+    peso_actual: animal.peso_actual || null,
+    ubicacion_actual: animal.ubicacion_actual || "",
+    notas: animal.notas || "",
+  };
   mostrarModalAnimal.value = true;
 };
 
@@ -397,27 +461,63 @@ const guardarAnimal = async () => {
   guardando.value = true;
 
   try {
+    console.log("💾 Guardando animal:", formAnimal.value);
+    
+    // Preparar datos para envío
+    const datos = {
+      chapeta: formAnimal.value.chapeta,
+      nombre: formAnimal.value.nombre || null,
+      sexo: formAnimal.value.sexo,
+      fecha_nacimiento: formAnimal.value.fecha_nacimiento,
+      raza: formAnimal.value.raza,
+      estado_reproductivo: formAnimal.value.estado_reproductivo || null,
+      estado_productivo: formAnimal.value.estado_productivo || null,
+      peso_actual: formAnimal.value.peso_actual || null,
+      ubicacion_actual: formAnimal.value.ubicacion_actual || null,
+      notas: formAnimal.value.notas || null,
+    };
+
     if (animalEditando.value) {
       // Actualizar animal existente
       const response = await api.put(
         `/animales/${animalEditando.value.id}/`,
-        formAnimal.value,
+        datos
       );
-      const index = animales.value.findIndex(
-        (a) => a.id === animalEditando.value.id,
+      
+      // Actualizar en la lista local
+      const animalesArray = toArray(animales.value);
+      const index = animalesArray.findIndex(
+        (a) => a.id === animalEditando.value.id
       );
-      animales.value[index] = response.data;
+      if (index !== -1) {
+        animalesArray[index] = response.data;
+        animales.value = animalesArray;
+      }
+      
+      console.log("✅ Animal actualizado");
     } else {
       // Crear nuevo animal
-      const response = await api.post("/animales/", formAnimal.value);
-      animales.value.push(response.data);
+      const response = await api.post("/animales/", datos);
+      
+      // Agregar a la lista local
+      const animalesArray = toArray(animales.value);
+      animalesArray.push(response.data);
+      animales.value = animalesArray;
+      
+      console.log("✅ Animal creado");
     }
 
     cerrarModal();
     alert("Animal guardado correctamente");
-  } catch (error) {
-    console.error("Error guardando animal:", error);
-    alert("Error al guardar el animal");
+    
+  } catch (err) {
+    console.error("❌ Error guardando animal:", err);
+    console.error("Respuesta del servidor:", err.response?.data);
+    
+    const errorMsg = err.response?.data?.detail || 
+                    JSON.stringify(err.response?.data) || 
+                    err.message;
+    alert(`Error al guardar: ${errorMsg}`);
   } finally {
     guardando.value = false;
   }
@@ -440,6 +540,7 @@ const cerrarModal = () => {
   };
 };
 
+// Función corregida para subir fotos - reemplazar la función subirFoto en Grupos.vue
 const subirFoto = async () => {
   const input = document.createElement("input");
   input.type = "file";
@@ -449,32 +550,75 @@ const subirFoto = async () => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Validar tamaño (máximo 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert("❌ La imagen es demasiado grande (máximo 10MB)");
+      return;
+    }
+
+    // Validar tipo de archivo
+    if (!file.type.startsWith('image/')) {
+      alert("❌ El archivo debe ser una imagen");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("image", file);
 
     try {
+      console.log(`📷 Subiendo imagen para animal ${animalDetalle.value.chapeta}`);
+      
+      // Mostrar loading
+      const originalText = document.querySelector('.btn-upload').textContent;
+      document.querySelector('.btn-upload').textContent = "📤 Subiendo...";
+      document.querySelector('.btn-upload').disabled = true;
+
       const response = await api.post(
-        `/animales/${animalDetalle.value.id}/subir-imagen/`,
+        `/animales/${animalDetalle.value.id}/subir_imagen/`,
         formData,
         {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
+          headers: { 
+            "Content-Type": "multipart/form-data" 
+          },
+        }
       );
 
-      animalDetalle.value.foto_perfil_url = response.data.url;
+      console.log("✅ Respuesta upload:", response.data);
 
-      // Actualizar también en la lista
-      const index = animales.value.findIndex(
-        (a) => a.id === animalDetalle.value.id,
-      );
-      if (index !== -1) {
-        animales.value[index].foto_perfil_url = response.data.url;
+      if (response.data.success && response.data.url) {
+        // Actualizar URL en el detalle
+        animalDetalle.value.foto_perfil_url = response.data.url;
+
+        // Actualizar también en la lista
+        const animalesArray = toArray(animales.value);
+        const index = animalesArray.findIndex(
+          (a) => a.id === animalDetalle.value.id
+        );
+        if (index !== -1) {
+          animalesArray[index].foto_perfil_url = response.data.url;
+          animales.value = animalesArray;
+        }
+
+        alert("✅ Foto subida correctamente");
+      } else {
+        throw new Error(response.data.error || "Error desconocido");
       }
 
-      alert("Foto subida correctamente");
     } catch (error) {
-      console.error("Error subiendo foto:", error);
-      alert("Error al subir la foto");
+      console.error("❌ Error subiendo foto:", error);
+      
+      let errorMessage = "Error al subir la foto";
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(`❌ ${errorMessage}`);
+    } finally {
+      // Restaurar botón
+      document.querySelector('.btn-upload').textContent = originalText;
+      document.querySelector('.btn-upload').disabled = false;
     }
   };
 
@@ -520,6 +664,38 @@ onMounted(() => {
 
 .btn-primary:hover {
   background: #2980b9;
+}
+
+/* Loading y Error */
+.loading-section {
+  text-align: center;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+}
+
+.error-section {
+  text-align: center;
+  padding: 2rem;
+  background: #fadbd8;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  color: #e74c3c;
+}
+
+.btn-retry {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.btn-retry:hover {
+  background: #c0392b;
 }
 
 /* Filtros */
@@ -691,6 +867,21 @@ onMounted(() => {
   padding: 3rem;
   color: #7f8c8d;
   font-style: italic;
+}
+
+.btn-add {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  margin-top: 1rem;
+}
+
+.btn-add:hover {
+  background: #2980b9;
 }
 
 /* Modal */

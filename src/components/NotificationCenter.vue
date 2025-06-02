@@ -58,7 +58,7 @@
 
 <script setup>
 import { ref, onMounted } from "vue";
-import { useNotifications } from "../composables/useWebSocket";
+import { useNotifications } from "../composables/useWebSocket.js";
 
 const showPanel = ref(false);
 const { notifications, unreadCount, isConnected, markAsRead, requestPermission } = useNotifications();

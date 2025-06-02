@@ -39,7 +39,7 @@
           <p><strong>API URL:</strong> {{ apiUrl }}</p>
           <p>
             <strong>Estado Backend:</strong>
-            <span :class="backendStatus">{{ backendStatus }}</span>
+            <span :class="backendStatusClass">{{ backendStatusText }}</span>
           </p>
         </div>
       </form>
@@ -49,13 +49,16 @@
         <p><strong>Email:</strong> admin@genetics.com</p>
         <p><strong>Contraseña:</strong> admin123</p>
         <button @click="fillDemo" class="demo-btn">Usar Demo</button>
+        <button @click="createDemoUser" class="demo-btn create-user-btn">
+          Crear Usuario Demo
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import api from "../services/api";
 import { useRouter } from "vue-router";
 
@@ -63,30 +66,67 @@ const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const error = ref("");
-const backendStatus = ref("Verificando...");
+const backendStatus = ref("checking");
 const router = useRouter();
 
 const apiUrl = import.meta.env.VITE_API_URL;
 
+const backendStatusClass = computed(() => {
+  switch (backendStatus.value) {
+    case "online":
+      return "status-online";
+    case "offline":
+      return "status-offline";
+    default:
+      return "status-checking";
+  }
+});
+
+const backendStatusText = computed(() => {
+  switch (backendStatus.value) {
+    case "online":
+      return "✅ Conectado";
+    case "offline":
+      return "❌ Desconectado";
+    default:
+      return "🔄 Verificando...";
+  }
+});
+
 const checkBackend = async () => {
   try {
-    await api.get("/animales/");
-    backendStatus.value = "✅ Conectado";
+    backendStatus.value = "checking";
+    
+    // Usar endpoint público de health check
+    await api.get("/health/");
+    backendStatus.value = "online";
+    error.value = "";
+    
   } catch (err) {
-    backendStatus.value = "❌ Desconectado";
-    error.value = "Backend no disponible. ¿Está corriendo Django?";
+    backendStatus.value = "offline";
     console.error("Error conectando al backend:", err);
+    
+    if (err.code === "ERR_NETWORK") {
+      error.value = "❌ No se puede conectar al backend. ¿Está corriendo Django en localhost:8000?";
+    } else {
+      error.value = "❌ Error de conexión con el backend";
+    }
   }
 };
 
 const login = async () => {
+  if (backendStatus.value !== "online") {
+    error.value = "❌ Backend no disponible. Verifica que Django esté ejecutándose.";
+    return;
+  }
+
   loading.value = true;
   error.value = "";
 
   try {
     console.log("Intentando login con:", {
       email: email.value,
-      password: password.value,
+      password: "***",
     });
     console.log("URL API:", `${apiUrl}/auth/login/`);
 
@@ -99,9 +139,15 @@ const login = async () => {
 
     if (response.data.access) {
       localStorage.setItem("token", response.data.access);
+      
+      // Opcional: Guardar información del usuario
+      if (response.data.user) {
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+      }
+      
       router.push("/resumen");
     } else {
-      error.value = "Respuesta inválida del servidor";
+      error.value = "❌ Respuesta inválida del servidor";
     }
   } catch (err) {
     console.error("Error completo:", err);
@@ -109,15 +155,16 @@ const login = async () => {
     console.error("Status:", err.response?.status);
 
     if (err.response?.status === 401) {
-      error.value = "Credenciales incorrectas";
+      error.value = "❌ Credenciales incorrectas";
     } else if (err.response?.status === 400) {
-      error.value = "Datos inválidos: " + JSON.stringify(err.response.data);
+      const errorMsg = err.response.data?.detail || 
+                     err.response.data?.non_field_errors?.[0] ||
+                     JSON.stringify(err.response.data);
+      error.value = `❌ Datos inválidos: ${errorMsg}`;
     } else if (err.code === "ERR_NETWORK") {
-      error.value =
-        "Error de red. ¿Está corriendo el backend en localhost:8000?";
+      error.value = "❌ Error de red. ¿Está corriendo el backend en localhost:8000?";
     } else {
-      error.value =
-        "Error del servidor: " + (err.response?.data?.detail || err.message);
+      error.value = `❌ Error del servidor: ${err.response?.data?.detail || err.message}`;
     }
   } finally {
     loading.value = false;
@@ -127,6 +174,38 @@ const login = async () => {
 const fillDemo = () => {
   email.value = "admin@genetics.com";
   password.value = "admin123";
+};
+
+const createDemoUser = async () => {
+  try {
+    loading.value = true;
+    error.value = "";
+    
+    const response = await api.post("/auth/register/", {
+      email: "admin@genetics.com",
+      password: "admin123",
+      nombre: "Admin",
+      apellidos: "Demo",
+      rol: "admin"
+    });
+    
+    console.log("Usuario demo creado:", response.data);
+    alert("✅ Usuario demo creado exitosamente");
+    fillDemo();
+    
+  } catch (err) {
+    console.error("Error creando usuario demo:", err);
+    
+    if (err.response?.status === 400) {
+      // Usuario probablemente ya existe
+      alert("ℹ️ El usuario demo ya existe. Puedes usar las credenciales mostradas.");
+      fillDemo();
+    } else {
+      error.value = `❌ Error creando usuario demo: ${err.response?.data?.detail || err.message}`;
+    }
+  } finally {
+    loading.value = false;
+  }
 };
 
 onMounted(() => {
@@ -150,7 +229,7 @@ onMounted(() => {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
   padding: 2rem;
   width: 100%;
-  max-width: 400px;
+  max-width: 450px;
 }
 
 .login-header {
@@ -239,6 +318,21 @@ onMounted(() => {
   margin: 0.25rem 0;
 }
 
+.status-online {
+  color: #27ae60;
+  font-weight: 600;
+}
+
+.status-offline {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
+.status-checking {
+  color: #f39c12;
+  font-weight: 600;
+}
+
 .demo-credentials {
   margin-top: 2rem;
   padding: 1rem;
@@ -266,11 +360,20 @@ onMounted(() => {
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
-  margin-top: 0.5rem;
+  margin: 0.25rem;
   font-size: 0.9rem;
+  transition: background 0.2s;
 }
 
 .demo-btn:hover {
   background: #229954;
+}
+
+.create-user-btn {
+  background: #3498db;
+}
+
+.create-user-btn:hover {
+  background: #2980b9;
 }
 </style>

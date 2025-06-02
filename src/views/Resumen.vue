@@ -40,6 +40,17 @@
       </div>
     </div>
 
+    <!-- Estado de carga -->
+    <div v-if="cargando" class="loading-section">
+      <p>🔄 Cargando datos...</p>
+    </div>
+
+    <!-- Errores -->
+    <div v-if="error" class="error-section">
+      <p>❌ {{ error }}</p>
+      <button @click="cargarDatos" class="btn-retry">🔄 Reintentar</button>
+    </div>
+
     <!-- Alertas importantes -->
     <div class="alerts-section" v-if="alertas.length > 0">
       <h2>🔔 Alertas Importantes</h2>
@@ -86,7 +97,7 @@
     <div class="acciones-rapidas">
       <h2>⚡ Acciones Rápidas</h2>
       <div class="acciones-grid">
-        <router-link to="/animales" class="accion-btn">
+        <router-link to="/grupos" class="accion-btn">
           <div class="accion-icon">🐄</div>
           <span>Gestionar Animales</span>
         </router-link>
@@ -121,6 +132,8 @@ const tratamientosActivos = ref(0);
 const eventosHoy = ref(0);
 const alertas = ref([]);
 const proximosEventos = ref([]);
+const cargando = ref(false);
+const error = ref("");
 
 // Fecha actual
 const fechaActual = computed(() => {
@@ -132,46 +145,84 @@ const fechaActual = computed(() => {
   });
 });
 
+// Función auxiliar para verificar si es array
+const toArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && data.results) return data.results;
+  return [];
+};
+
 // Cargar datos del dashboard
 const cargarDatos = async () => {
+  cargando.value = true;
+  error.value = "";
+  
   try {
-    // Cargar estadísticas básicas
-    const [animalesRes, incidenciasRes, tratamientosRes, eventosRes] =
-      await Promise.all([
-        api.get("/animales/"),
-        api.get("/incidencias/"),
-        api.get("/tratamientos/"),
-        api.get("/eventos/"),
-      ]);
+    console.log("🔄 Cargando datos del dashboard...");
+    
+    // Cargar estadísticas básicas con manejo de errores individual
+    const promises = [
+      api.get("/animales/").catch(err => ({ data: [] })),
+      api.get("/incidencias/").catch(err => ({ data: [] })),
+      api.get("/tratamientos/").catch(err => ({ data: [] })),
+      api.get("/eventos/").catch(err => ({ data: [] })),
+    ];
 
-    totalAnimales.value = animalesRes.data.length;
-    incidenciasPendientes.value = incidenciasRes.data.filter(
-      (i) => i.estado === "pendiente",
+    const [animalesRes, incidenciasRes, tratamientosRes, eventosRes] = await Promise.all(promises);
+
+    console.log("📊 Respuestas recibidas:", {
+      animales: animalesRes.data,
+      incidencias: incidenciasRes.data,
+      tratamientos: tratamientosRes.data,
+      eventos: eventosRes.data
+    });
+
+    // Convertir a arrays y calcular estadísticas
+    const animales = toArray(animalesRes.data);
+    const incidencias = toArray(incidenciasRes.data);
+    const tratamientos = toArray(tratamientosRes.data);
+    const eventos = toArray(eventosRes.data);
+
+    totalAnimales.value = animales.length;
+    incidenciasPendientes.value = incidencias.filter(
+      (i) => i.estado === "pendiente"
     ).length;
-    tratamientosActivos.value = tratamientosRes.data.length;
+    tratamientosActivos.value = tratamientos.length;
 
     // Eventos de hoy
     const hoy = new Date().toISOString().split("T")[0];
-    eventosHoy.value = eventosRes.data.filter((e) =>
-      e.fecha_inicio.startsWith(hoy),
+    eventosHoy.value = eventos.filter((e) =>
+      e.fecha_inicio && e.fecha_inicio.startsWith(hoy)
     ).length;
 
     // Próximos eventos (próximos 7 días)
     const proximos7Dias = new Date();
     proximos7Dias.setDate(proximos7Dias.getDate() + 7);
 
-    proximosEventos.value = eventosRes.data
+    proximosEventos.value = eventos
       .filter(
         (e) =>
+          e.fecha_inicio &&
           new Date(e.fecha_inicio) <= proximos7Dias &&
-          new Date(e.fecha_inicio) >= new Date(),
+          new Date(e.fecha_inicio) >= new Date()
       )
       .slice(0, 5);
 
     // Generar alertas basadas en los datos
-    generarAlertas(incidenciasRes.data, eventosRes.data);
-  } catch (error) {
-    console.error("Error cargando datos del dashboard:", error);
+    generarAlertas(incidencias, eventos);
+
+    console.log("✅ Datos cargados exitosamente:", {
+      totalAnimales: totalAnimales.value,
+      incidenciasPendientes: incidenciasPendientes.value,
+      tratamientosActivos: tratamientosActivos.value,
+      eventosHoy: eventosHoy.value
+    });
+
+  } catch (err) {
+    console.error("❌ Error cargando datos del dashboard:", err);
+    error.value = `Error cargando datos: ${err.response?.data?.detail || err.message}`;
+  } finally {
+    cargando.value = false;
   }
 };
 
@@ -179,49 +230,64 @@ const cargarDatos = async () => {
 const generarAlertas = (incidencias, eventos) => {
   const nuevasAlertas = [];
 
-  // Alertas por incidencias críticas
-  const incidenciasCriticas = incidencias.filter(
-    (i) =>
-      i.estado === "pendiente" && i.tipo.toLowerCase().includes("enfermedad"),
-  );
+  try {
+    // Alertas por incidencias críticas
+    const incidenciasCriticas = incidencias.filter(
+      (i) =>
+        i.estado === "pendiente" && 
+        i.tipo && 
+        i.tipo.toLowerCase().includes("enfermedad")
+    );
 
-  if (incidenciasCriticas.length > 0) {
-    nuevasAlertas.push({
-      id: 1,
-      tipo: "critica",
-      icono: "🚨",
-      titulo: "Incidencias Críticas",
-      mensaje: `${incidenciasCriticas.length} incidencias de salud requieren atención inmediata`,
-      fecha: "Ahora",
-    });
+    if (incidenciasCriticas.length > 0) {
+      nuevasAlertas.push({
+        id: 1,
+        tipo: "critica",
+        icono: "🚨",
+        titulo: "Incidencias Críticas",
+        mensaje: `${incidenciasCriticas.length} incidencias de salud requieren atención inmediata`,
+        fecha: "Ahora",
+      });
+    }
+
+    // Alertas por eventos próximos
+    const eventosHoy = eventos.filter((e) =>
+      e.fecha_inicio && e.fecha_inicio.startsWith(new Date().toISOString().split("T")[0])
+    );
+
+    if (eventosHoy.length > 0) {
+      nuevasAlertas.push({
+        id: 2,
+        tipo: "info",
+        icono: "📅",
+        titulo: "Eventos Programados Hoy",
+        mensaje: `Tienes ${eventosHoy.length} eventos programados para hoy`,
+        fecha: "Hoy",
+      });
+    }
+
+    alertas.value = nuevasAlertas;
+  } catch (err) {
+    console.error("❌ Error generando alertas:", err);
+    alertas.value = [];
   }
-
-  // Alertas por eventos próximos
-  const eventosHoy = eventos.filter((e) =>
-    e.fecha_inicio.startsWith(new Date().toISOString().split("T")[0]),
-  );
-
-  if (eventosHoy.length > 0) {
-    nuevasAlertas.push({
-      id: 2,
-      tipo: "info",
-      icono: "📅",
-      titulo: "Eventos Programados Hoy",
-      mensaje: `Tienes ${eventosHoy.length} eventos programados para hoy`,
-      fecha: "Hoy",
-    });
-  }
-
-  alertas.value = nuevasAlertas;
 };
 
 // Formatear fechas
 const formatearDia = (fecha) => {
-  return new Date(fecha).getDate();
+  try {
+    return new Date(fecha).getDate();
+  } catch {
+    return "?";
+  }
 };
 
 const formatearMes = (fecha) => {
-  return new Date(fecha).toLocaleDateString("es-ES", { month: "short" });
+  try {
+    return new Date(fecha).toLocaleDateString("es-ES", { month: "short" });
+  } catch {
+    return "?";
+  }
 };
 
 // Cargar datos al montar
@@ -253,6 +319,38 @@ onMounted(() => {
   color: #7f8c8d;
   margin: 0.5rem 0;
   text-transform: capitalize;
+}
+
+/* Loading y Error */
+.loading-section {
+  text-align: center;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+}
+
+.error-section {
+  text-align: center;
+  padding: 2rem;
+  background: #fadbd8;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  color: #e74c3c;
+}
+
+.btn-retry {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.btn-retry:hover {
+  background: #c0392b;
 }
 
 /* Stats Grid */
