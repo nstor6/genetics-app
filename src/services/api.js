@@ -5,6 +5,22 @@ const api = axios.create({
   timeout: 10000,
 });
 
+// Función para limpiar sesión y redirigir
+const clearSessionAndRedirect = () => {
+  console.log("🔓 Limpiando sesión por token inválido...");
+
+  // Limpiar almacenamiento
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("configuraciones");
+  sessionStorage.clear();
+
+  // Redirigir solo si no estamos ya en login
+  if (window.location.pathname !== "/login") {
+    window.location.href = "/login";
+  }
+};
+
 // Interceptor para agregar token a todas las peticiones
 api.interceptors.request.use(
   (config) => {
@@ -40,16 +56,31 @@ api.interceptors.response.use(
       message: error.message,
     });
 
-    // Si es 401, redirigir a login
+    // Manejar errores de autenticación
     if (error.response?.status === 401) {
-      console.log("🔒 Token expirado o inválido, redirigiendo a login...");
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      console.log("🔒 Token expirado o inválido");
 
-      // Solo redirigir si no estamos ya en login
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+      // Solo limpiar y redirigir si no estamos en endpoints de auth
+      const isAuthEndpoint =
+        error.config?.url?.includes("/auth/login") || error.config?.url?.includes("/auth/register");
+
+      if (!isAuthEndpoint) {
+        clearSessionAndRedirect();
       }
+    }
+
+    // Manejar errores de servidor (500)
+    if (error.response?.status >= 500) {
+      console.error("🚨 Error del servidor:", error.response?.data);
+    }
+
+    // Manejar errores de red
+    if (error.code === "ECONNABORTED" || error.message.includes("timeout")) {
+      console.error("⏱️ Timeout de conexión");
+    }
+
+    if (error.code === "ERR_NETWORK") {
+      console.error("🌐 Error de red - servidor no disponible");
     }
 
     return Promise.reject(error);

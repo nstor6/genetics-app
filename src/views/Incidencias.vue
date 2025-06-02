@@ -247,6 +247,15 @@ const incidenciasFiltradas = computed(() => {
     );
   }
 
+  if (Array.isArray(resultado)) {
+  resultado.sort((a, b) => {
+    // tu lógica de ordenación
+  });
+} else {
+  console.error("❌ resultado no es un array:", resultado);
+}
+
+
   return resultado.sort(
     (a, b) => new Date(b.fecha_deteccion) - new Date(a.fecha_deteccion),
   );
