@@ -253,76 +253,153 @@ const medicamentosComunes = [
   "Antibiótico",
 ];
 
+// Función auxiliar para asegurar que tenemos un array
+const toArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && Array.isArray(data.results)) return data.results;
+  console.warn("⚠️ Datos recibidos no son array:", data);
+  return [];
+};
+
 // Computed
 const medicamentosUnicos = computed(() => {
-  const meds = [...new Set(tratamientos.value.map((t) => t.medicamento))];
-  return meds.sort();
+  try {
+    // Asegurar que tratamientos.value es un array
+    const tratamientosArray = toArray(tratamientos.value);
+    const meds = [...new Set(tratamientosArray.map((t) => t.medicamento).filter(Boolean))];
+    return meds.sort();
+  } catch (error) {
+    console.error("❌ Error en medicamentosUnicos:", error);
+    return [];
+  }
 });
 
 const tratamientosFiltrados = computed(() => {
-  let resultado = tratamientos.value;
+  try {
+    // Asegurar que tratamientos.value es un array
+    let tratamientosArray = [];
+    
+    if (Array.isArray(tratamientos.value)) {
+      tratamientosArray = tratamientos.value;
+    } else if (tratamientos.value && typeof tratamientos.value === 'object') {
+      // Si es un objeto con propiedad 'results' (paginación de Django)
+      if (Array.isArray(tratamientos.value.results)) {
+        tratamientosArray = tratamientos.value.results;
+      } else {
+        console.warn("⚠️ tratamientos.value no es un array ni tiene results:", tratamientos.value);
+        return [];
+      }
+    } else {
+      console.warn("⚠️ tratamientos.value no es válido:", tratamientos.value);
+      return [];
+    }
+    
+    let resultado = [...tratamientosArray]; // Crear copia para evitar mutaciones
 
-  // Filtro por búsqueda
-  if (busqueda.value) {
-    const termino = busqueda.value.toLowerCase();
-    resultado = resultado.filter(
-      (tratamiento) =>
-        tratamiento.medicamento.toLowerCase().includes(termino) ||
-        obtenerNombreAnimal(tratamiento.animal)
-          .toLowerCase()
-          .includes(termino) ||
-        (tratamiento.observaciones &&
-          tratamiento.observaciones.toLowerCase().includes(termino)),
-    );
+    // Filtro por búsqueda
+    if (busqueda.value) {
+      const termino = busqueda.value.toLowerCase();
+      resultado = resultado.filter(
+        (tratamiento) =>
+          tratamiento.medicamento?.toLowerCase().includes(termino) ||
+          obtenerNombreAnimal(tratamiento.animal)
+            .toLowerCase()
+            .includes(termino) ||
+          (tratamiento.observaciones &&
+            tratamiento.observaciones.toLowerCase().includes(termino)),
+      );
+    }
+
+    // Filtro por medicamento
+    if (filtroMedicamento.value) {
+      resultado = resultado.filter(
+        (tratamiento) => tratamiento.medicamento === filtroMedicamento.value,
+      );
+    }
+
+    // Filtro por fecha
+    if (filtroFecha.value) {
+      resultado = resultado.filter(
+        (tratamiento) => tratamiento.fecha === filtroFecha.value,
+      );
+    }
+
+    // Verificar que resultado es array antes de ordenar
+    if (!Array.isArray(resultado)) {
+      console.error("❌ resultado no es un array:", resultado);
+      return [];
+    }
+
+    return resultado.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    
+  } catch (err) {
+    console.error("❌ Error en tratamientosFiltrados:", err);
+    return [];
   }
-
-  // Filtro por medicamento
-  if (filtroMedicamento.value) {
-    resultado = resultado.filter(
-      (tratamiento) => tratamiento.medicamento === filtroMedicamento.value,
-    );
-  }
-
-  // Filtro por fecha
-  if (filtroFecha.value) {
-    resultado = resultado.filter(
-      (tratamiento) => tratamiento.fecha === filtroFecha.value,
-    );
-  }
-
-  return resultado.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 });
 
 // Métodos
 const cargarTratamientos = async () => {
   try {
+    console.log("🔄 Cargando tratamientos...");
     const response = await api.get("/tratamientos/");
-    tratamientos.value = response.data;
+    
+    console.log("📊 Respuesta tratamientos:", response.data);
+    
+    // Convertir a array usando la función auxiliar
+    const tratamientosArray = toArray(response.data);
+    tratamientos.value = tratamientosArray;
+    
+    console.log(`✅ ${tratamientosArray.length} tratamientos cargados`);
+    
   } catch (error) {
-    console.error("Error cargando tratamientos:", error);
+    console.error("❌ Error cargando tratamientos:", error);
     alert("Error al cargar los tratamientos");
+    tratamientos.value = []; // Asegurar que siempre sea array
   }
 };
 
 const cargarAnimales = async () => {
   try {
+    console.log("🔄 Cargando animales...");
     const response = await api.get("/animales/");
-    animales.value = response.data;
+    
+    console.log("📊 Respuesta animales:", response.data);
+    
+    // Convertir a array usando la función auxiliar
+    const animalesArray = toArray(response.data);
+    animales.value = animalesArray;
+    
+    console.log(`✅ ${animalesArray.length} animales cargados`);
+    
   } catch (error) {
-    console.error("Error cargando animales:", error);
+    console.error("❌ Error cargando animales:", error);
+    animales.value = []; // Asegurar que siempre sea array
   }
 };
 
 const cargarUsuarios = async () => {
   try {
+    console.log("🔄 Cargando usuarios...");
     const response = await api.get("/auth/");
-    usuarios.value = response.data;
+    
+    console.log("📊 Respuesta usuarios:", response.data);
+    
+    // Convertir a array usando la función auxiliar
+    const usuariosArray = toArray(response.data);
+    usuarios.value = usuariosArray;
+    
+    console.log(`✅ ${usuariosArray.length} usuarios cargados`);
+    
   } catch (error) {
-    console.error("Error cargando usuarios:", error);
+    console.error("❌ Error cargando usuarios:", error);
+    usuarios.value = []; // Asegurar que siempre sea array
   }
 };
 
 const obtenerNombreAnimal = (animalId) => {
+  if (!animalId) return "Sin animal";
+  
   const animal = animales.value.find((a) => a.id === animalId);
   return animal
     ? `${animal.chapeta}${animal.nombre ? " - " + animal.nombre : ""}`
@@ -330,6 +407,8 @@ const obtenerNombreAnimal = (animalId) => {
 };
 
 const obtenerNombreUsuario = (usuarioId) => {
+  if (!usuarioId) return "Sin usuario";
+  
   const usuario = usuarios.value.find((u) => u.id === usuarioId);
   return usuario
     ? `${usuario.nombre} ${usuario.apellidos}`
@@ -337,11 +416,18 @@ const obtenerNombreUsuario = (usuarioId) => {
 };
 
 const formatearFecha = (fecha) => {
-  return new Date(fecha).toLocaleDateString("es-ES", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  if (!fecha) return "Sin fecha";
+  
+  try {
+    return new Date(fecha).toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch (error) {
+    console.error("Error formateando fecha:", error);
+    return "Fecha inválida";
+  }
 };
 
 const editarTratamiento = (tratamiento) => {
@@ -414,7 +500,9 @@ const guardarTratamiento = async () => {
       const index = tratamientos.value.findIndex(
         (t) => t.id === tratamientoEditando.value.id,
       );
-      tratamientos.value[index] = response.data;
+      if (index !== -1) {
+        tratamientos.value[index] = response.data;
+      }
     } else {
       // Crear nuevo tratamiento
       const response = await api.post("/tratamientos/", datos);

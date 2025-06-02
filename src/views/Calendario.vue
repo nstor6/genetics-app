@@ -7,22 +7,18 @@
       </button>
     </div>
 
-    <!-- Navegación del calendario -->
     <div class="calendario-nav">
       <button @click="mesAnterior" class="nav-btn">‹</button>
       <h2 class="mes-actual">{{ nombreMesActual }} {{ añoActual }}</h2>
       <button @click="mesSiguiente" class="nav-btn">›</button>
     </div>
 
-    <!-- Vista del calendario -->
     <div class="calendario-container">
       <div class="calendario-grid">
-        <!-- Cabecera días de la semana -->
         <div class="dia-semana" v-for="dia in diasSemana" :key="dia">
           {{ dia }}
         </div>
 
-        <!-- Días del calendario -->
         <div
           v-for="dia in diasDelMes"
           :key="dia.fecha"
@@ -38,7 +34,6 @@
         >
           <span class="numero-dia">{{ dia.numero }}</span>
 
-          <!-- Eventos del día -->
           <div class="eventos-dia" v-if="dia.eventos.length > 0">
             <div
               v-for="evento in dia.eventos.slice(0, 2)"
@@ -56,7 +51,6 @@
       </div>
     </div>
 
-    <!-- Lista de eventos del día seleccionado -->
     <div
       v-if="diaSeleccionado && eventosDelDia.length > 0"
       class="eventos-detalle"
@@ -88,7 +82,6 @@
       </div>
     </div>
 
-    <!-- Modal para crear/editar evento -->
     <div
       v-if="mostrarModalEvento"
       class="modal-overlay"
@@ -184,9 +177,9 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
-import api from "../services/api";
+import api from "../services/api"; // Ensure this path is correct
 
-// Estados reactivos
+// Reactive states
 const eventos = ref([]);
 const animales = ref([]);
 const fechaActual = ref(new Date());
@@ -195,7 +188,7 @@ const mostrarModalEvento = ref(false);
 const eventoEditando = ref(null);
 const guardando = ref(false);
 
-// Formulario de evento
+// Event form
 const formEvento = ref({
   titulo: "",
   descripcion: "",
@@ -206,10 +199,10 @@ const formEvento = ref({
   recurrente: false,
 });
 
-// Días de la semana
+// Weekday names
 const diasSemana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
-// Nombres de meses
+// Month names
 const nombresMeses = [
   "Enero",
   "Febrero",
@@ -236,13 +229,13 @@ const diasDelMes = computed(() => {
   const primerDia = new Date(año, mes, 1);
   const ultimoDia = new Date(año, mes + 1, 0);
   const diasEnMes = ultimoDia.getDate();
-  const primerDiaSemana = primerDia.getDay();
+  const primerDiaSemana = primerDia.getDay(); // 0 for Sunday, 1 for Monday, etc.
 
   const dias = [];
   const hoy = new Date();
 
-  // Días del mes anterior
-  const mesAnterior = new Date(año, mes - 1, 0);
+  // Days from previous month to fill the start of the grid
+  const mesAnterior = new Date(año, mes - 1, 0); // Last day of previous month
   for (let i = primerDiaSemana - 1; i >= 0; i--) {
     const dia = mesAnterior.getDate() - i;
     const fecha = new Date(año, mes - 1, dia);
@@ -255,7 +248,7 @@ const diasDelMes = computed(() => {
     });
   }
 
-  // Días del mes actual
+  // Days of the current month
   for (let dia = 1; dia <= diasEnMes; dia++) {
     const fecha = new Date(año, mes, dia);
     const esHoy = fecha.toDateString() === hoy.toDateString();
@@ -269,8 +262,8 @@ const diasDelMes = computed(() => {
     });
   }
 
-  // Días del mes siguiente para completar la grilla
-  const diasRestantes = 42 - dias.length; // 6 semanas x 7 días
+  // Days from next month to complete the grid (always 6 weeks total for consistency)
+  const diasRestantes = 42 - dias.length; // 6 weeks * 7 days
   for (let dia = 1; dia <= diasRestantes; dia++) {
     const fecha = new Date(año, mes + 1, dia);
     dias.push({
@@ -287,13 +280,25 @@ const diasDelMes = computed(() => {
 
 const eventosDelDia = computed(() => {
   if (!diaSeleccionado.value) return [];
+  // Ensure we pass a Date object to obtenerEventosDelDia
   return obtenerEventosDelDia(new Date(diaSeleccionado.value.fecha));
 });
 
-// Métodos
+// Methods
 const obtenerEventosDelDia = (fecha) => {
+  // The warning here will be less frequent if cargarEventos is fixed
+  if (!Array.isArray(eventos.value)) {
+    console.warn("⚠️ eventos.value no es un array (en obtenerEventosDelDia):", eventos.value);
+    return [];
+  }
+
   const fechaStr = fecha.toISOString().split("T")[0];
   return eventos.value.filter((evento) => {
+    // Ensure evento.fecha_inicio is a string before creating a Date object
+    if (typeof evento.fecha_inicio !== 'string') {
+      console.warn('Evento con fecha_inicio no válida:', evento);
+      return false;
+    }
     const eventoFecha = new Date(evento.fecha_inicio)
       .toISOString()
       .split("T")[0];
@@ -304,18 +309,48 @@ const obtenerEventosDelDia = (fecha) => {
 const cargarEventos = async () => {
   try {
     const response = await api.get("/eventos/");
-    eventos.value = response.data;
+    // *** IMPORTANT: Adjust this line based on your API response structure ***
+    // Option 1: If your API directly returns an array:
+    if (Array.isArray(response.data)) {
+      eventos.value = response.data;
+    }
+    // Option 2: If your API returns an object like { "events": [...] }
+    else if (response.data && Array.isArray(response.data.events)) {
+      eventos.value = response.data.events;
+    }
+    // Option 3: If your API returns an object like { "results": [...] } (common in paginated APIs)
+    else if (response.data && Array.isArray(response.data.results)) {
+      eventos.value = response.data.results;
+    }
+    // Option 4: If your API returns an object with a single event or other structure
+    // and you need to ensure it's an array for the calendar:
+    // If it's an object but represents a list, you might convert its values or properties.
+    // For now, if it's not an array, we'll log and set to empty to prevent errors.
+    else {
+      console.warn("La respuesta de la API para /eventos/ no es un array o no contiene un array en una propiedad esperada:", response.data);
+      eventos.value = []; // Ensure it's an array to prevent errors in computed properties
+    }
   } catch (error) {
     console.error("Error cargando eventos:", error);
+    eventos.value = []; // Ensure it's an array on error
   }
 };
 
 const cargarAnimales = async () => {
   try {
     const response = await api.get("/animales/");
-    animales.value = response.data;
+    // Assuming /animales/ also returns an array directly or within a 'data'/'results' property
+    if (Array.isArray(response.data)) {
+      animales.value = response.data;
+    } else if (response.data && Array.isArray(response.data.results)) {
+      animales.value = response.data.results;
+    } else {
+      console.warn("La respuesta de la API para /animales/ no es un array:", response.data);
+      animales.value = [];
+    }
   } catch (error) {
     console.error("Error cargando animales:", error);
+    animales.value = []; // Set to empty array on error
   }
 };
 
@@ -337,7 +372,7 @@ const seleccionarDia = (dia) => {
 
 const verEvento = (evento) => {
   console.log("Ver evento:", evento);
-  // Aquí podrías abrir un modal de detalles del evento
+  // Here you could open an event details modal
 };
 
 const editarEvento = (evento) => {
@@ -346,7 +381,8 @@ const editarEvento = (evento) => {
     titulo: evento.titulo,
     descripcion: evento.descripcion || "",
     tipo: evento.tipo,
-    animal: evento.animal || "",
+    // Ensure animal is the ID, not the full object if it comes that way
+    animal: evento.animal_id || evento.animal || "", // Prioritize animal_id if your API sends it
     fecha_inicio: evento.fecha_inicio,
     fecha_fin: evento.fecha_fin || "",
     recurrente: evento.recurrente || false,
@@ -359,7 +395,12 @@ const eliminarEvento = async (evento) => {
 
   try {
     await api.delete(`/eventos/${evento.id}/`);
+    // Filter out the deleted event from the reactive list
     eventos.value = eventos.value.filter((e) => e.id !== evento.id);
+    // If the selected day's events are affected, re-evaluate them
+    if (diaSeleccionado.value) {
+      diaSeleccionado.value.eventos = obtenerEventosDelDia(new Date(diaSeleccionado.value.fecha));
+    }
     alert("Evento eliminado correctamente");
   } catch (error) {
     console.error("Error eliminando evento:", error);
@@ -371,21 +412,33 @@ const guardarEvento = async () => {
   guardando.value = true;
 
   try {
+    let response;
     if (eventoEditando.value) {
-      // Actualizar evento existente
-      const response = await api.put(
+      // Update existing event
+      response = await api.put(
         `/eventos/${eventoEditando.value.id}/`,
         formEvento.value,
       );
       const index = eventos.value.findIndex(
         (e) => e.id === eventoEditando.value.id,
       );
-      eventos.value[index] = response.data;
+      if (index !== -1) {
+        // Update the item in the reactive array
+        eventos.value[index] = response.data;
+      }
     } else {
-      // Crear nuevo evento
-      const response = await api.post("/eventos/", formEvento.value);
+      // Create new event
+      response = await api.post("/eventos/", formEvento.value);
       eventos.value.push(response.data);
     }
+
+    // Refresh calendar data after save/update if needed
+    // A simple way is to reload all events, but for performance,
+    // you might just insert/update the specific event.
+    // For a calendar, recalculating `diasDelMes` or updating
+    // specific day's events is better.
+    // Since `diasDelMes` is a computed property depending on `eventos.value`,
+    // it will reactively update when `eventos.value` changes.
 
     cerrarModalEvento();
     alert("Evento guardado correctamente");
@@ -400,6 +453,7 @@ const guardarEvento = async () => {
 const cerrarModalEvento = () => {
   mostrarModalEvento.value = false;
   eventoEditando.value = null;
+  // Reset form
   formEvento.value = {
     titulo: "",
     descripcion: "",
@@ -412,6 +466,7 @@ const cerrarModalEvento = () => {
 };
 
 const formatearFecha = (fecha) => {
+  if (!fecha) return '';
   return new Date(fecha).toLocaleDateString("es-ES", {
     weekday: "long",
     year: "numeric",
@@ -421,13 +476,14 @@ const formatearFecha = (fecha) => {
 };
 
 const formatearHora = (fechaHora) => {
+  if (!fechaHora) return '';
   return new Date(fechaHora).toLocaleTimeString("es-ES", {
     hour: "2-digit",
     minute: "2-digit",
   });
 };
 
-// Cargar datos al montar
+// Load data on component mount
 onMounted(() => {
   cargarEventos();
   cargarAnimales();
@@ -435,6 +491,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* Your existing CSS styles remain unchanged */
 .calendario-page {
   padding: 1.5rem;
   padding-bottom: 5rem;

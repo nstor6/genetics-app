@@ -218,79 +218,141 @@ const formIncidencia = ref({
   fecha_resolucion: "",
 });
 
+// Función auxiliar para asegurar que tenemos un array
+const toArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && Array.isArray(data.results)) return data.results;
+  console.warn("⚠️ Datos recibidos no son array:", data);
+  return [];
+};
+
 // Computed
 const incidenciasFiltradas = computed(() => {
-  let resultado = incidencias.value;
+  try {
+    // Asegurar que incidencias.value es un array
+    let incidenciasArray = [];
+    
+    if (Array.isArray(incidencias.value)) {
+      incidenciasArray = incidencias.value;
+    } else if (incidencias.value && typeof incidencias.value === 'object') {
+      // Si es un objeto con propiedad 'results' (paginación de Django)
+      if (Array.isArray(incidencias.value.results)) {
+        incidenciasArray = incidencias.value.results;
+      } else {
+        console.warn("⚠️ incidencias.value no es un array ni tiene results:", incidencias.value);
+        return [];
+      }
+    } else {
+      console.warn("⚠️ incidencias.value no es válido:", incidencias.value);
+      return [];
+    }
+    
+    let resultado = [...incidenciasArray]; // Crear copia para evitar mutaciones
 
-  // Filtro por búsqueda
-  if (busqueda.value) {
-    const termino = busqueda.value.toLowerCase();
-    resultado = resultado.filter(
-      (incidencia) =>
-        incidencia.tipo.toLowerCase().includes(termino) ||
-        incidencia.descripcion.toLowerCase().includes(termino) ||
-        obtenerNombreAnimal(incidencia.animal).toLowerCase().includes(termino),
+    // Filtro por búsqueda
+    if (busqueda.value) {
+      const termino = busqueda.value.toLowerCase();
+      resultado = resultado.filter(
+        (incidencia) =>
+          incidencia.tipo?.toLowerCase().includes(termino) ||
+          incidencia.descripcion?.toLowerCase().includes(termino) ||
+          obtenerNombreAnimal(incidencia.animal).toLowerCase().includes(termino),
+      );
+    }
+
+    // Filtro por estado
+    if (filtroEstado.value) {
+      resultado = resultado.filter(
+        (incidencia) => incidencia.estado === filtroEstado.value,
+      );
+    }
+
+    // Filtro por tipo
+    if (filtroTipo.value) {
+      resultado = resultado.filter((incidencia) =>
+        incidencia.tipo?.toLowerCase().includes(filtroTipo.value),
+      );
+    }
+
+    // Verificar que resultado es array antes de ordenar
+    if (!Array.isArray(resultado)) {
+      console.error("❌ resultado no es un array:", resultado);
+      return [];
+    }
+
+    // Ordenar por fecha de detección (más recientes primero)
+    return resultado.sort(
+      (a, b) => new Date(b.fecha_deteccion) - new Date(a.fecha_deteccion),
     );
+    
+  } catch (err) {
+    console.error("❌ Error en incidenciasFiltradas:", err);
+    return [];
   }
-
-  // Filtro por estado
-  if (filtroEstado.value) {
-    resultado = resultado.filter(
-      (incidencia) => incidencia.estado === filtroEstado.value,
-    );
-  }
-
-  // Filtro por tipo
-  if (filtroTipo.value) {
-    resultado = resultado.filter((incidencia) =>
-      incidencia.tipo.toLowerCase().includes(filtroTipo.value),
-    );
-  }
-
-  if (Array.isArray(resultado)) {
-  resultado.sort((a, b) => {
-    // tu lógica de ordenación
-  });
-} else {
-  console.error("❌ resultado no es un array:", resultado);
-}
-
-
-  return resultado.sort(
-    (a, b) => new Date(b.fecha_deteccion) - new Date(a.fecha_deteccion),
-  );
 });
 
 // Métodos
 const cargarIncidencias = async () => {
   try {
+    console.log("🔄 Cargando incidencias...");
     const response = await api.get("/incidencias/");
-    incidencias.value = response.data;
+    
+    console.log("📊 Respuesta incidencias:", response.data);
+    
+    // Convertir a array usando la función auxiliar
+    const incidenciasArray = toArray(response.data);
+    incidencias.value = incidenciasArray;
+    
+    console.log(`✅ ${incidenciasArray.length} incidencias cargadas`);
+    
   } catch (error) {
-    console.error("Error cargando incidencias:", error);
+    console.error("❌ Error cargando incidencias:", error);
     alert("Error al cargar las incidencias");
+    incidencias.value = []; // Asegurar que siempre sea array
   }
 };
 
 const cargarAnimales = async () => {
   try {
+    console.log("🔄 Cargando animales...");
     const response = await api.get("/animales/");
-    animales.value = response.data;
+    
+    console.log("📊 Respuesta animales:", response.data);
+    
+    // Convertir a array usando la función auxiliar
+    const animalesArray = toArray(response.data);
+    animales.value = animalesArray;
+    
+    console.log(`✅ ${animalesArray.length} animales cargados`);
+    
   } catch (error) {
-    console.error("Error cargando animales:", error);
+    console.error("❌ Error cargando animales:", error);
+    animales.value = []; // Asegurar que siempre sea array
   }
 };
 
 const cargarUsuarios = async () => {
   try {
+    console.log("🔄 Cargando usuarios...");
     const response = await api.get("/auth/");
-    usuarios.value = response.data;
+    
+    console.log("📊 Respuesta usuarios:", response.data);
+    
+    // Convertir a array usando la función auxiliar
+    const usuariosArray = toArray(response.data);
+    usuarios.value = usuariosArray;
+    
+    console.log(`✅ ${usuariosArray.length} usuarios cargados`);
+    
   } catch (error) {
-    console.error("Error cargando usuarios:", error);
+    console.error("❌ Error cargando usuarios:", error);
+    usuarios.value = []; // Asegurar que siempre sea array
   }
 };
 
 const obtenerNombreAnimal = (animalId) => {
+  if (!animalId) return "Sin animal";
+  
   const animal = animales.value.find((a) => a.id === animalId);
   return animal
     ? `${animal.chapeta}${animal.nombre ? " - " + animal.nombre : ""}`
@@ -298,6 +360,8 @@ const obtenerNombreAnimal = (animalId) => {
 };
 
 const obtenerNombreUsuario = (usuarioId) => {
+  if (!usuarioId) return "Sin usuario";
+  
   const usuario = usuarios.value.find((u) => u.id === usuarioId);
   return usuario
     ? `${usuario.nombre} ${usuario.apellidos}`
@@ -314,11 +378,18 @@ const formatearEstado = (estado) => {
 };
 
 const formatearFecha = (fecha) => {
-  return new Date(fecha).toLocaleDateString("es-ES", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  if (!fecha) return "Sin fecha";
+  
+  try {
+    return new Date(fecha).toLocaleDateString("es-ES", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch (error) {
+    console.error("Error formateando fecha:", error);
+    return "Fecha inválida";
+  }
 };
 
 const editarIncidencia = (incidencia) => {
@@ -345,7 +416,9 @@ const resolverIncidencia = async (incidencia) => {
     });
 
     const index = incidencias.value.findIndex((i) => i.id === incidencia.id);
-    incidencias.value[index] = response.data;
+    if (index !== -1) {
+      incidencias.value[index] = response.data;
+    }
 
     alert("Incidencia marcada como resuelta");
   } catch (error) {
@@ -399,7 +472,9 @@ const guardarIncidencia = async () => {
       const index = incidencias.value.findIndex(
         (i) => i.id === incidenciaEditando.value.id,
       );
-      incidencias.value[index] = response.data;
+      if (index !== -1) {
+        incidencias.value[index] = response.data;
+      }
     } else {
       // Crear nueva incidencia
       const response = await api.post("/incidencias/", datos);
